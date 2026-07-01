@@ -213,8 +213,9 @@
             const formatDateThai = (dateString) => {
                 if (!dateString) return '';
                 const date = new Date(dateString);
+                const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
                 const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-                return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
+                return `${days[date.getDay()]} ที่ ${date.getDate()} ${months[date.getMonth()]} พ.ศ. ${date.getFullYear() + 543}`;
             };
 
             return (
@@ -284,8 +285,8 @@
 
                         {/* Print Header (Only visible when printing) */}
                         <div className="hidden print-only text-center mb-6">
-                            <h2 className="text-2xl font-bold text-black mb-2">รายงานสถิติการมาเรียนนักเรียนประจำวัน</h2>
-                            <p className="text-lg text-black">ประจำวันที่ {formatDateThai(selectedDate)}</p>
+                            <h2 className="text-2xl font-bold text-black mb-2">สถิติการมาเรียนของนักเรียน โรงเรียนวัดแม่กะ</h2>
+                            <p className="text-lg text-black">ประจำวัน{formatDateThai(selectedDate)}</p>
                         </div>
 
                         {/* Loading State */}
@@ -299,7 +300,7 @@
                                 
                                 {/* Table Title */}
                                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-3 no-print">
-                                    ข้อมูลประจำวันที่ {formatDateThai(selectedDate)}
+                                    ข้อมูลประจำวัน{formatDateThai(selectedDate)}
                                 </h2>
 
                                 {/* Table */}
