@@ -84,6 +84,7 @@
             const donutChartRef = React.useRef(null);
             const stackedChartRef = React.useRef(null);
             const lineChartRef = React.useRef(null);
+            const compareLineChartRef = React.useRef(null);
 
             const chartInstances = React.useRef({});
 
@@ -268,7 +269,7 @@
                     });
                 }
 
-                // 4. กราฟเส้นแนวโน้มเวลาเฉลี่ยรายวัน
+                // 4. กราฟเส้นแนวโน้มเวลาเฉลี่ยรายวัน (ภาพรวม)
                 if (lineChartRef.current && data.dailyAverages && data.dailyAverages.length > 0) {
                     const labels = data.dailyAverages.map(d => {
                         const parts = d.date.split('-');
@@ -339,6 +340,91 @@
                     });
                 }
 
+                // 5. กราฟเส้นเปรียบเทียบพฤติกรรมการมาสายของแต่ละชั้นเรียน (เมื่อเลือก ทุกชั้นเรียน)
+                if (targetClass === 'ทุกชั้นเรียน' && compareLineChartRef.current && data.classDailyAverages) {
+                    const uniqueDates = data.dailyAverages.map(d => d.date);
+                    const formattedLabels = data.dailyAverages.map(d => {
+                        const parts = d.date.split('-');
+                        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                        const days = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+                        const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                        return `${days[dateObj.getDay()]} ${dateObj.getDate()} ${months[dateObj.getMonth()]}`;
+                    });
+
+                    const classes = ['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'];
+                    const classColors = [
+                        'rgb(59, 130, 246)',  // ป.1 Blue
+                        'rgb(16, 185, 129)',  // ป.2 Green
+                        'rgb(245, 158, 11)',  // ป.3 Amber/Orange
+                        'rgb(139, 92, 246)',  // ป.4 Purple
+                        'rgb(236, 72, 153)',  // ป.5 Pink
+                        'rgb(239, 68, 68)'    // ป.6 Red
+                    ];
+
+                    const datasets = classes.map((cName, idx) => {
+                        const classAvgList = data.classDailyAverages[cName] || [];
+                        const classAvgMap = {};
+                        classAvgList.forEach(item => {
+                            classAvgMap[item.date] = item.avgSeconds / 3600;
+                        });
+
+                        const dataPoints = uniqueDates.map(date => classAvgMap[date] !== undefined ? classAvgMap[date] : null);
+
+                        return {
+                            label: cName,
+                            data: dataPoints,
+                            borderColor: classColors[idx],
+                            backgroundColor: 'transparent',
+                            borderWidth: 2.2,
+                            tension: 0.2,
+                            pointBackgroundColor: classColors[idx],
+                            pointRadius: 3.5,
+                            pointHoverRadius: 5.5,
+                            spanGaps: true
+                        };
+                    });
+
+                    const ctx = compareLineChartRef.current.getContext('2d');
+                    chartInstances.current.compareLine = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: formattedLabels,
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { 
+                                    position: 'bottom',
+                                    labels: { font: { family: 'Sarabun', size: 11, weight: 'bold' } }
+                                },
+                                datalabels: {
+                                    display: false // ปิดป้ายข้อมูลเพื่อไม่ให้ลายตาเนื่องจากมีเส้นทับซ้อนกันเยอะ
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { font: { family: 'Sarabun', size: 10 } },
+                                    grid: { display: false }
+                                },
+                                y: {
+                                    ticks: {
+                                        font: { family: 'Sarabun' },
+                                        callback: function(value) {
+                                            const totalSeconds = Math.round(value * 3600);
+                                            const h = Math.floor(totalSeconds / 3600);
+                                            const m = Math.floor((totalSeconds % 3600) / 60);
+                                            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} น.`;
+                                        }
+                                    },
+                                    grid: { color: '#f3f4f6' }
+                                }
+                            }
+                        }
+                    });
+                }
+
                 return () => {
                     Object.values(chartInstances.current).forEach(chart => {
                         if (chart) chart.destroy();
@@ -377,9 +463,19 @@
                     {/* กราฟเส้นแนวโน้มเวลาเฉลี่ย */}
                     {data.dailyAverages && data.dailyAverages.length > 0 && (
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-96 md:col-span-2">
-                            <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">📈 แนวโน้มเวลาเฉลี่ยรายวัน (เปรียบเทียบพฤติกรรมการมาสาย)</h4>
+                            <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">📈 แนวโน้มเวลาเฉลี่ยรายวัน (ภาพรวมโรงเรียน)</h4>
                             <div className="relative flex-grow">
                                 <canvas ref={lineChartRef}></canvas>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* กราฟเส้นเปรียบเทียบระดับชั้น ป.1 - ป.6 */}
+                    {targetClass === 'ทุกชั้นเรียน' && data.classDailyAverages && data.dailyAverages && data.dailyAverages.length > 0 && (
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-96 md:col-span-2">
+                            <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">📈 แนวโน้มเวลาเฉลี่ยรายวัน (เปรียบเทียบพฤติกรรมการมาสายของแต่ละชั้น)</h4>
+                            <div className="relative flex-grow">
+                                <canvas ref={compareLineChartRef}></canvas>
                             </div>
                         </div>
                     )}
@@ -611,7 +707,7 @@
                                     className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2" /></svg>
-                                    สารสนเทศและกราฟ (Dashboard)
+                                    สารสนเทศและกราฟ
                                 </button>
                             </div>
                         </div>
@@ -901,11 +997,11 @@
                             </div>
                         )}
 
-                        {/* ================= แท็บ 3: Dashboard สารสนเทศและกราฟ ================= */}
+                        {/* ================= แท็บ 3: สารสนเทศและกราฟ ================= */}
                         {activeTab === 'dashboard' && (
                             <div>
                                 <div className="bg-white rounded-xl shadow p-5 mb-6 no-print border-t-4 border-schoolRed">
-                                    <h3 className="font-bold text-gray-800 mb-4">📊 ตัวกรองแดชบอร์ดสารสนเทศ</h3>
+                                    <h3 className="font-bold text-gray-800 mb-4">📊 ตัวกรองสารสนเทศและกราฟ</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                                         <div>
                                             <label className="block text-sm mb-1">ชั้นเรียน</label>
@@ -923,13 +1019,13 @@
                                             <input type="date" value={dashboardEndDate} onChange={(e) => setDashboardEndDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white"/>
                                         </div>
                                         <button onClick={fetchDashboard} disabled={dashboardLoading} className="w-full font-bold py-2 px-4 rounded shadow transition-colors bg-schoolRed hover:bg-red-700 text-white disabled:bg-gray-300">
-                                            {dashboardLoading ? 'กำลังประมวลผล...' : 'ดึงข้อมูลแดชบอร์ด'}
+                                            {dashboardLoading ? 'กำลังประมวลผล...' : 'ดึงข้อมูลสารสนเทศ'}
                                         </button>
                                     </div>
                                     {dashboardData && (
                                         <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
                                             <button onClick={handlePrint} className="flex items-center space-x-1 text-schoolRed hover:bg-red-50 px-4 py-2 rounded font-semibold border border-schoolRed">
-                                                <span>พิมพ์แดชบอร์ด / Save PDF</span>
+                                                <span>พิมพ์รายงาน / Save PDF</span>
                                             </button>
                                         </div>
                                     )}
@@ -938,7 +1034,7 @@
                                 {dashboardLoading ? (
                                     <div className="flex flex-col items-center justify-center py-20">
                                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-schoolRed"></div>
-                                        <p className="mt-4 text-gray-500 font-medium">กำลังคำนวณและวาดกราฟแดชบอร์ด...</p>
+                                        <p className="mt-4 text-gray-500 font-medium">กำลังคำนวณและวาดกราฟ...</p>
                                     </div>
                                 ) : dashboardData ? (
                                     <div className="print-border">
@@ -967,7 +1063,7 @@
                                             </div>
                                         </div>
 
-                                        {/* กล่องรายละเอียดกลุ่มเวลาสำหรับแท็บ Dashboard เพื่อความสมบูรณ์ */}
+                                        {/* กล่องรายละเอียดกลุ่มเวลาสำหรับแท็บสารสนเทศและกราฟเพื่อความสมบูรณ์ */}
                                         <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6 print-border">
                                             {[
                                                 { label: 'ก่อน 7.00 น.', count: dashboardData.summary['ก่อน 7.00 น.'], color: 'bg-green-100 text-green-800 border-green-200' },
@@ -990,7 +1086,7 @@
                                 ) : (
                                     <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
                                         <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                        <p className="text-gray-500 font-medium">กรุณาเลือกเงื่อนไขการกรองข้อมูลแล้วกดปุ่ม "ดึงข้อมูลแดชบอร์ด"</p>
+                                        <p className="text-gray-500 font-medium">กรุณาเลือกเงื่อนไขการกรองข้อมูลแล้วกดปุ่ม "ดึงข้อมูลสารสนเทศและกราฟ"</p>
                                     </div>
                                 )}
                             </div>
