@@ -91,7 +91,7 @@
                 return d.toISOString().split('T')[0];
             });
             const [analyticsEndDate, setAnalyticsEndDate] = React.useState(new Date().toISOString().split('T')[0]);
-            const [analyticsClass, setAnalyticsClass] = React.useState('ป.1');
+            const [analyticsClass, setAnalyticsClass] = React.useState('ทุกชั้นเรียน'); // เปลี่ยน Default เป็น "ทุกชั้นเรียน"
             const [perfectOnly, setPerfectOnly] = React.useState(false);
             const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
             const [analyticsData, setAnalyticsData] = React.useState(null);
@@ -421,6 +421,7 @@
                                         <div>
                                             <label className="block text-sm mb-1">ชั้นเรียน</label>
                                             <select value={analyticsClass} onChange={(e) => setAnalyticsClass(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white">
+                                                <option value="ทุกชั้นเรียน">ทุกชั้นเรียน</option>
                                                 {['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'].map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
                                         </div>
@@ -479,6 +480,9 @@
                                                 <thead>
                                                     <tr className="bg-gray-100">
                                                         <th className="border p-2 text-center w-12 text-gray-700">ลำดับ</th>
+                                                        {analyticsClass === 'ทุกชั้นเรียน' && (
+                                                            <th className="border p-2 text-center w-16 text-gray-700">ชั้น</th>
+                                                        )}
                                                         <th className="border p-2 text-gray-700">ชื่อ - สกุล</th>
                                                         <th className="border p-2 text-center w-20 text-gray-700">มา (วัน)</th>
                                                         <th className="border p-2 text-center w-20 text-gray-700">ขาด/ลา</th>
@@ -502,6 +506,9 @@
                                                             return (
                                                                 <tr key={index} className="hover:bg-gray-50 border-b border-gray-200">
                                                                     <td className="border-x border-gray-200 p-2 text-center font-bold text-gray-800">{row.rank}</td>
+                                                                    {analyticsClass === 'ทุกชั้นเรียน' && (
+                                                                        <td className="border-x border-gray-200 p-2 text-center font-medium text-gray-600">{row.className}</td>
+                                                                    )}
                                                                     <td className="border-x border-gray-200 p-2 font-medium text-gray-800">
                                                                         {row.name}
                                                                         {row.perfectAttendance && <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-1 rounded border border-yellow-300" title="มาเรียนครบ 100%">🌟</span>}
