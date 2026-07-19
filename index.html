@@ -35,6 +35,10 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- Chart.js & Datalabels Plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    
     <style>
         body {
             font-family: 'Sarabun', sans-serif;
@@ -72,6 +76,317 @@
         // ----------------------------------------------------
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyHOsBAAX74AUYeX6U3N7MigdF6UeJQ8d5XsOK7jRjrag6GDBAeActCwbOHhfMQ9yt4/exec";
 
+        // ลงทะเบียนปลั๊กอิน Chart.js DataLabels ทั่วไป
+        Chart.register(ChartDataLabels);
+
+        function DashboardCharts({ data, targetClass }) {
+            const barChartRef = React.useRef(null);
+            const donutChartRef = React.useRef(null);
+            const stackedChartRef = React.useRef(null);
+            const lineChartRef = React.useRef(null);
+
+            const chartInstances = React.useRef({});
+
+            React.useEffect(() => {
+                // ทำลายกราฟเก่าเพื่อหลีกเลี่ยง canvas reuse error
+                Object.values(chartInstances.current).forEach(chart => {
+                    if (chart) chart.destroy();
+                });
+                chartInstances.current = {};
+
+                if (!data) return;
+
+                const buckets = ['ก่อน 7.00 น.', '7.00 - 7.15 น.', '7.15 - 7.30 น.', '7.30 - 7.45 น.', '7.45 - 8.00 น.', 'หลัง 8.00 น.'];
+                const bucketColors = [
+                    'rgba(16, 185, 129, 0.85)',  // เขียวเข้ม (ก่อน 7.00 น.)
+                    'rgba(52, 211, 153, 0.85)',  // เขียวมิ้นท์ (7.00 - 7.15 น.)
+                    'rgba(251, 191, 36, 0.85)',  // เหลืองทอง (7.15 - 7.30 น.)
+                    'rgba(249, 115, 22, 0.85)',  // ส้มอุ่น (7.30 - 7.45 น.)
+                    'rgba(239, 68, 68, 0.85)',   // แดงปะการัง (7.45 - 8.00 น.)
+                    'rgba(156, 163, 175, 0.85)'  // เทา (หลัง 8.00 น.)
+                ];
+                const bucketBorderColors = [
+                    'rgb(16, 185, 129)',
+                    'rgb(52, 211, 153)',
+                    'rgb(251, 191, 36)',
+                    'rgb(249, 115, 22)',
+                    'rgb(239, 68, 68)',
+                    'rgb(156, 163, 175)'
+                ];
+
+                // ยอดรวมจำนวนนักเรียนในแต่ละถังเวลา
+                const counts = buckets.map(b => data.summary[b] || 0);
+                const totalStudents = counts.reduce((a, b) => a + b, 0);
+
+                // 1. กราฟแท่งเปรียบเทียบจำนวนนักเรียนตามกลุ่มเวลา
+                if (barChartRef.current) {
+                    const ctx = barChartRef.current.getContext('2d');
+                    chartInstances.current.bar = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: buckets.map(b => b.replace(' น.', '')),
+                            datasets: [{
+                                label: 'จำนวนนักเรียน (คน)',
+                                data: counts,
+                                backgroundColor: bucketColors,
+                                borderColor: bucketBorderColors,
+                                borderWidth: 1,
+                                borderRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                datalabels: {
+                                    anchor: 'end',
+                                    align: 'top',
+                                    formatter: (value) => value > 0 ? `${value} คน` : '',
+                                    color: '#374151',
+                                    font: { weight: 'bold', family: 'Sarabun', size: 12 }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { precision: 0, font: { family: 'Sarabun' } },
+                                    grid: { color: '#f3f4f6' }
+                                },
+                                x: {
+                                    ticks: { font: { family: 'Sarabun' } },
+                                    grid: { display: false }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // 2. กราฟโดนัท/พายแสดงสัดส่วน (%)
+                if (donutChartRef.current) {
+                    const ctx = donutChartRef.current.getContext('2d');
+                    chartInstances.current.donut = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: buckets,
+                            datasets: [{
+                                data: counts,
+                                backgroundColor: bucketColors,
+                                borderColor: '#ffffff',
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { 
+                                    position: 'right', 
+                                    labels: { font: { family: 'Sarabun', size: 11 } } 
+                                },
+                                datalabels: {
+                                    formatter: (value) => {
+                                        if (totalStudents === 0 || value === 0) return '';
+                                        const percentage = ((value / totalStudents) * 100).toFixed(1);
+                                        return `${percentage}%`;
+                                    },
+                                    color: '#ffffff',
+                                    font: { weight: 'bold', family: 'Sarabun', size: 11 },
+                                    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+                                    textShadowBlur: 3
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // 3. กราฟแท่งซ้อน (Stacked Bar Chart) กรณี "ทุกชั้นเรียน"
+                if (targetClass === 'ทุกชั้นเรียน' && stackedChartRef.current) {
+                    const classes = ['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'];
+                    const classData = {};
+                    classes.forEach(c => {
+                        classData[c] = {};
+                        buckets.forEach(b => { classData[c][b] = 0; });
+                    });
+
+                    // นับข้อมูลรายระดับชั้น
+                    data.data.forEach(st => {
+                        const c = st.className;
+                        const b = st.bucket;
+                        if (classData[c] && classData[c][b] !== undefined) {
+                            classData[c][b]++;
+                        }
+                    });
+
+                    const datasets = buckets.map((bucket, idx) => ({
+                        label: bucket,
+                        data: classes.map(c => classData[c][bucket]),
+                        backgroundColor: bucketColors[idx],
+                        borderColor: bucketBorderColors[idx],
+                        borderWidth: 1
+                    }));
+
+                    const ctx = stackedChartRef.current.getContext('2d');
+                    chartInstances.current.stacked = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: classes,
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { 
+                                    position: 'bottom', 
+                                    labels: { font: { family: 'Sarabun', size: 11 } } 
+                                },
+                                datalabels: {
+                                    anchor: 'center',
+                                    align: 'center',
+                                    formatter: (value) => value > 0 ? value : '',
+                                    color: '#ffffff',
+                                    font: { weight: 'bold', family: 'Sarabun', size: 11 },
+                                    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+                                    textShadowBlur: 2
+                                }
+                            },
+                            scales: {
+                                x: { 
+                                    stacked: true,
+                                    ticks: { font: { family: 'Sarabun' } },
+                                    grid: { display: false }
+                                },
+                                y: { 
+                                    stacked: true, 
+                                    beginAtZero: true, 
+                                    ticks: { precision: 0, font: { family: 'Sarabun' } },
+                                    grid: { color: '#f3f4f6' }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // 4. กราฟเส้นแนวโน้มเวลาเฉลี่ยรายวัน
+                if (lineChartRef.current && data.dailyAverages && data.dailyAverages.length > 0) {
+                    const labels = data.dailyAverages.map(d => {
+                        const parts = d.date.split('-');
+                        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                        const days = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+                        const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                        return `${days[dateObj.getDay()]} ${dateObj.getDate()} ${months[dateObj.getMonth()]}`;
+                    });
+                    const timeValues = data.dailyAverages.map(d => d.avgSeconds / 3600); // แปลงเป็นทศนิยมชั่วโมงเพื่อคำนวณสเกล
+
+                    const ctx = lineChartRef.current.getContext('2d');
+                    chartInstances.current.line = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'เวลาเฉลี่ย (น.)',
+                                data: timeValues,
+                                borderColor: 'rgb(211, 47, 47)',
+                                backgroundColor: 'rgba(211, 47, 47, 0.08)',
+                                borderWidth: 2.5,
+                                tension: 0.2,
+                                fill: true,
+                                pointBackgroundColor: 'rgb(211, 47, 47)',
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 1.5,
+                                pointRadius: 5,
+                                pointHoverRadius: 7
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                datalabels: {
+                                    anchor: 'end',
+                                    align: 'top',
+                                    formatter: (value) => {
+                                        const totalSeconds = Math.round(value * 3600);
+                                        const h = Math.floor(totalSeconds / 3600);
+                                        const m = Math.floor((totalSeconds % 3600) / 60);
+                                        return `${String(h).padStart(2,'0')}.${String(m).padStart(2,'0')} น.`;
+                                    },
+                                    color: 'rgb(211, 47, 47)',
+                                    font: { weight: 'bold', family: 'Sarabun', size: 10 }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { font: { family: 'Sarabun', size: 10 } },
+                                    grid: { display: false }
+                                },
+                                y: {
+                                    ticks: {
+                                        font: { family: 'Sarabun' },
+                                        callback: function(value) {
+                                            const totalSeconds = Math.round(value * 3600);
+                                            const h = Math.floor(totalSeconds / 3600);
+                                            const m = Math.floor((totalSeconds % 3600) / 60);
+                                            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} น.`;
+                                        }
+                                    },
+                                    grid: { color: '#f3f4f6' }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                return () => {
+                    Object.values(chartInstances.current).forEach(chart => {
+                        if (chart) chart.destroy();
+                    });
+                };
+            }, [data, targetClass]);
+
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    {/* กราฟแท่ง */}
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-96">
+                        <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">📊 กราฟเปรียบเทียบจำนวนนักเรียนตามกลุ่มเวลา</h4>
+                        <div className="relative flex-grow">
+                            <canvas ref={barChartRef}></canvas>
+                        </div>
+                    </div>
+
+                    {/* กราฟวงกลม/โดนัท */}
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-96">
+                        <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">🍩 สัดส่วนเวลามาเรียนทั้งหมด (%)</h4>
+                        <div className="relative flex-grow">
+                            <canvas ref={donutChartRef}></canvas>
+                        </div>
+                    </div>
+
+                    {/* กราฟแท่งเปรียบเทียบทุกสายชั้น */}
+                    {targetClass === 'ทุกชั้นเรียน' && (
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[420px] md:col-span-2">
+                            <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">🏫 สถิติเปรียบเทียบระหว่างสายชั้น (ป.1 - ป.6) แยกตามกลุ่มเวลา</h4>
+                            <div className="relative flex-grow">
+                                <canvas ref={stackedChartRef}></canvas>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* กราฟเส้นแนวโน้มเวลาเฉลี่ย */}
+                    {data.dailyAverages && data.dailyAverages.length > 0 && (
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-96 md:col-span-2">
+                            <h4 className="font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-2">📈 แนวโน้มเวลาเฉลี่ยรายวัน (เปรียบเทียบพฤติกรรมการมาสาย)</h4>
+                            <div className="relative flex-grow">
+                                <canvas ref={lineChartRef}></canvas>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         function App() {
             // ระบบจัดการแท็บ
             const [activeTab, setActiveTab] = React.useState('daily'); 
@@ -95,6 +410,17 @@
             const [perfectOnly, setPerfectOnly] = React.useState(false);
             const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
             const [analyticsData, setAnalyticsData] = React.useState(null);
+
+            // State: แท็บสารสนเทศและกราฟ (Dashboard)
+            const [dashboardStartDate, setDashboardStartDate] = React.useState(() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 30); // Default 30 วันย้อนหลัง
+                return d.toISOString().split('T')[0];
+            });
+            const [dashboardEndDate, setDashboardEndDate] = React.useState(new Date().toISOString().split('T')[0]);
+            const [dashboardClass, setDashboardClass] = React.useState('ทุกชั้นเรียน');
+            const [dashboardLoading, setDashboardLoading] = React.useState(false);
+            const [dashboardData, setDashboardData] = React.useState(null);
 
             const [message, setMessage] = React.useState({ type: '', text: '', showHelp: false });
 
@@ -201,6 +527,33 @@
                 }
             };
 
+            const fetchDashboard = async () => {
+                setDashboardLoading(true);
+                setMessage({ type: '', text: '', showHelp: false });
+                try {
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ 
+                            action: 'getArrivalStats', 
+                            startDate: dashboardStartDate,
+                            endDate: dashboardEndDate,
+                            targetClass: dashboardClass
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        setDashboardData(result);
+                    } else {
+                        throw new Error(result.error || 'เกิดข้อผิดพลาดในการดึงข้อมูลสถิติ');
+                    }
+                } catch (error) {
+                    setMessage({ type: 'error', text: 'ไม่สามารถโหลดสถิติแดชบอร์ดได้ โปรดตรวจสอบการเชื่อมต่อ', showHelp: false });
+                } finally {
+                    setDashboardLoading(false);
+                }
+            };
+
             const handlePrint = () => { window.print(); };
 
             const formatDateThai = (dateString) => {
@@ -237,7 +590,7 @@
                                 </div>
                             </div>
                             
-                            {/* เมนูนำทาง 2 แท็บ */}
+                            {/* เมนูนำทาง 3 แท็บ */}
                             <div className="flex space-x-2 bg-white/20 p-1 rounded-lg backdrop-blur-sm">
                                 <button 
                                     onClick={() => setActiveTab('daily')}
@@ -252,6 +605,13 @@
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                                     วิเคราะห์รายห้อง
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('dashboard')}
+                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2" /></svg>
+                                    สารสนเทศและกราฟ (Dashboard)
                                 </button>
                             </div>
                         </div>
@@ -536,6 +896,101 @@
                                                 </tbody>
                                             </table>
                                         </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ================= แท็บ 3: Dashboard สารสนเทศและกราฟ ================= */}
+                        {activeTab === 'dashboard' && (
+                            <div>
+                                <div className="bg-white rounded-xl shadow p-5 mb-6 no-print border-t-4 border-schoolRed">
+                                    <h3 className="font-bold text-gray-800 mb-4">📊 ตัวกรองแดชบอร์ดสารสนเทศ</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                        <div>
+                                            <label className="block text-sm mb-1">ชั้นเรียน</label>
+                                            <select value={dashboardClass} onChange={(e) => setDashboardClass(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white">
+                                                <option value="ทุกชั้นเรียน">ทุกชั้นเรียน</option>
+                                                {['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'].map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">ตั้งแต่วันที่</label>
+                                            <input type="date" value={dashboardStartDate} onChange={(e) => setDashboardStartDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">ถึงวันที่</label>
+                                            <input type="date" value={dashboardEndDate} onChange={(e) => setDashboardEndDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white"/>
+                                        </div>
+                                        <button onClick={fetchDashboard} disabled={dashboardLoading} className="w-full font-bold py-2 px-4 rounded shadow transition-colors bg-schoolRed hover:bg-red-700 text-white disabled:bg-gray-300">
+                                            {dashboardLoading ? 'กำลังประมวลผล...' : 'ดึงข้อมูลแดชบอร์ด'}
+                                        </button>
+                                    </div>
+                                    {dashboardData && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                                            <button onClick={handlePrint} className="flex items-center space-x-1 text-schoolRed hover:bg-red-50 px-4 py-2 rounded font-semibold border border-schoolRed">
+                                                <span>พิมพ์แดชบอร์ด / Save PDF</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {dashboardLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-20">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-schoolRed"></div>
+                                        <p className="mt-4 text-gray-500 font-medium">กำลังคำนวณและวาดกราฟแดชบอร์ด...</p>
+                                    </div>
+                                ) : dashboardData ? (
+                                    <div className="print-border">
+                                        {/* ส่วนหัวสำหรับการพิมพ์ */}
+                                        <div className="hidden print-only text-center mb-6">
+                                            <h2 className="text-2xl font-bold text-black mb-2">รายงานวิเคราะห์สารสนเทศการมาเรียนนักเรียน ชั้น {dashboardClass}</h2>
+                                            <p className="text-gray-700 print:text-black">
+                                                ช่วงเวลา: {formatShortDateThai(dashboardStartDate)} - {formatShortDateThai(dashboardEndDate)} 
+                                                (รวมจำนวนวันที่เช็คชื่อ: {dashboardData.targetDays} วัน)
+                                            </p>
+                                        </div>
+
+                                        {/* กล่องสรุปสถิติด้านบน */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">จำนวนวันที่เช็คชื่อทั้งหมด</div>
+                                                <div className="text-3xl font-black mt-2">{dashboardData.targetDays} <span className="text-lg font-normal">วัน</span></div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">เวลามาเรียนเฉลี่ยรวม</div>
+                                                <div className="text-3xl font-black mt-2">{dashboardData.overallAvgTimeStr && dashboardData.overallAvgTimeStr !== '-' ? `${dashboardData.overallAvgTimeStr} น.` : '-'}</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">นักเรียนที่มีส่วนร่วมในระบบ</div>
+                                                <div className="text-3xl font-black mt-2">{dashboardData.data ? dashboardData.data.length : 0} <span className="text-lg font-normal">คน</span></div>
+                                            </div>
+                                        </div>
+
+                                        {/* กล่องรายละเอียดกลุ่มเวลาสำหรับแท็บ Dashboard เพื่อความสมบูรณ์ */}
+                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6 print-border">
+                                            {[
+                                                { label: 'ก่อน 7.00 น.', count: dashboardData.summary['ก่อน 7.00 น.'], color: 'bg-green-100 text-green-800 border-green-200' },
+                                                { label: '7.00-7.15 น.', count: dashboardData.summary['7.00 - 7.15 น.'], color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                                                { label: '7.15-7.30 น.', count: dashboardData.summary['7.15 - 7.30 น.'], color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+                                                { label: '7.30-7.45 น.', count: dashboardData.summary['7.30 - 7.45 น.'], color: 'bg-orange-50 text-orange-700 border-orange-200' },
+                                                { label: '7.45-8.00 น.', count: dashboardData.summary['7.45 - 8.00 น.'], color: 'bg-red-50 text-red-700 border-red-200' },
+                                                { label: 'หลัง 8.00 น.', count: dashboardData.summary['หลัง 8.00 น.'], color: 'bg-gray-100 text-gray-700 border-gray-200' },
+                                            ].map((bucket, idx) => (
+                                                <div key={idx} className={`border rounded-xl p-3 text-center ${bucket.color}`}>
+                                                    <div className="text-xs font-bold mb-1">{bucket.label}</div>
+                                                    <div className="text-2xl font-black">{bucket.count} <span className="text-sm font-normal">คน</span></div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* ส่วนชุดกราฟแสดงผล */}
+                                        <DashboardCharts data={dashboardData} targetClass={dashboardClass} />
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        <p className="text-gray-500 font-medium">กรุณาเลือกเงื่อนไขการกรองข้อมูลแล้วกดปุ่ม "ดึงข้อมูลแดชบอร์ด"</p>
                                     </div>
                                 )}
                             </div>
