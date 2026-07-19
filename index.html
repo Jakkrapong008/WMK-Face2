@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>พิมพ์สถิติการมาเรียนนักเรียน</title>
+    <title>ระบบวิเคราะห์และพิมพ์สถิติการมาเรียน</title>
     
     <!-- ฟอนต์ Sarabun -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,48 +16,39 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: {
-                        sans: ['Sarabun', 'sans-serif'],
-                    },
-                    colors: {
-                        schoolRed: '#D32F2F',
-                        schoolYellow: '#FBC02D',
-                    }
+                    fontFamily: { sans: ['Sarabun', 'sans-serif'] },
+                    colors: { schoolRed: '#D32F2F', schoolYellow: '#FBC02D' }
                 }
             }
         }
     </script>
 
-    <!-- React & ReactDOM -->
+    <!-- React, ReactDOM, Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- Libraries สำหรับกราฟ และบันทึกรูปภาพ -->
+    <script src="https://unpkg.com/prop-types@15.6.2/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
     <style>
-        body {
-            font-family: 'Sarabun', sans-serif;
-            background-color: #f9fafb;
-        }
+        body { font-family: 'Sarabun', sans-serif; background-color: #f9fafb; }
         @media print {
             .no-print { display: none !important; }
             .print-only { display: block !important; }
             body { background-color: white; }
             
-            /* อนุญาตให้พิมพ์สีพื้นหลัง */
+            /* บังคับให้เบราว์เซอร์พิมพ์สีพื้นหลัง */
             * {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 color-adjust: exact !important;
             }
-
-            /* แก้ไขกรอบตารางสำหรับการพิมพ์ */
             .print-border { border: 1px solid #e5e7eb !important; }
             .print-border th, .print-border td { border: 1px solid #e5e7eb !important; }
-            
-            /* ให้สรุปสีพิมพ์ได้ */
-            .print-bg-transparent { background-color: transparent !important; }
         }
         .table-container::-webkit-scrollbar { height: 8px; }
         .table-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
@@ -72,8 +63,10 @@
         // ----------------------------------------------------
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyHOsBAAX74AUYeX6U3N7MigdF6UeJQ8d5XsOK7jRjrag6GDBAeActCwbOHhfMQ9yt4/exec";
 
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } = window.Recharts;
+
         function App() {
-            // ระบบจัดการแท็บ
+            // ระบบแท็บ ('daily', 'analytics', 'dashboard')
             const [activeTab, setActiveTab] = React.useState('daily'); 
             
             // State: แท็บรายงานประจำวัน
@@ -84,21 +77,20 @@
             const [summaryData, setSummaryData] = React.useState({ boys: 0, girls: 0, total: 0, present: 0, absent: 0 });
             const [settings, setSettings] = React.useState({ teacher1: '', teacher2: '', topic: '' });
             
-            // State: แท็บวิเคราะห์เวลาเรียน
+            // State: แท็บวิเคราะห์และกราฟ
             const [analyticsStartDate, setAnalyticsStartDate] = React.useState(() => {
-                const d = new Date();
-                d.setDate(d.getDate() - 7); // Default ย้อนหลัง 7 วัน
+                const d = new Date(); d.setDate(d.getDate() - 7);
                 return d.toISOString().split('T')[0];
             });
             const [analyticsEndDate, setAnalyticsEndDate] = React.useState(new Date().toISOString().split('T')[0]);
-            const [analyticsClass, setAnalyticsClass] = React.useState('ทุกชั้นเรียน'); // เปลี่ยน Default เป็น "ทุกชั้นเรียน"
+            const [analyticsClass, setAnalyticsClass] = React.useState('ทุกชั้นเรียน');
             const [perfectOnly, setPerfectOnly] = React.useState(false);
             const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
             const [analyticsData, setAnalyticsData] = React.useState(null);
 
             const [message, setMessage] = React.useState({ type: '', text: '', showHelp: false });
 
-            // รายชื่อครูเวร
+            // รายชื่อครู
             const teachersList = [
                 "นางสาวศศิประภา ชมถิ่น", "นางณพิชญา นิติคุณชัย", "นางสาวศิริณทิพย์ สุวรรณ์",
                 "นางสาวจันทวี ทาเกิด", "นายณัฐพงษ์ วิริยา", "นายธนะกานต์ ภูมิมาลา",
@@ -110,98 +102,59 @@
             }, [selectedDate, activeTab]);
 
             const fetchData = async (date) => {
-                setLoading(true);
-                setMessage({ type: '', text: '', showHelp: false });
+                setLoading(true); setMessage({ type: '', text: '', showHelp: false });
                 try {
-                    const response = await fetch(GAS_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'getData', date: date })
-                    });
-                    
+                    const response = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'getData', date: date }) });
                     const result = await response.json();
                     
                     if (result.success) {
                         setReportData(result.data.report);
-                        
                         let sBoys = 0, sGirls = 0, sTotal = 0, sPresent = 0, sAbsent = 0;
                         result.data.report.forEach(row => {
                             sBoys += row.totalBoys; sGirls += row.totalGirls; sTotal += row.total;
                             sPresent += row.present; sAbsent += row.absent;
                         });
                         setSummaryData({ boys: sBoys, girls: sGirls, total: sTotal, present: sPresent, absent: sAbsent });
-                        
-                        setSettings({
-                            teacher1: result.data.settings.teacher1 || '',
-                            teacher2: result.data.settings.teacher2 || '',
-                            topic: result.data.settings.topic || ''
-                        });
-                    } else {
-                        throw new Error(result.error || 'เกิดข้อผิดพลาดในการดึงข้อมูล');
-                    }
+                        setSettings({ teacher1: result.data.settings.teacher1 || '', teacher2: result.data.settings.teacher2 || '', topic: result.data.settings.topic || '' });
+                    } else { throw new Error(result.error); }
                 } catch (error) {
-                    const isFetchError = error.message.includes('Failed to fetch') || error.message.includes('NetworkError');
-                    setMessage({ type: 'error', text: 'ไม่สามารถโหลดข้อมูลได้ ' + (isFetchError ? '(เชื่อมต่อเซิร์ฟเวอร์ไม่ได้)' : `(${error.message})`), showHelp: isFetchError });
-                    setReportData([]);
-                } finally {
-                    setLoading(false);
-                }
+                    setMessage({ type: 'error', text: 'โหลดข้อมูลไม่ได้ กรุณาตรวจสอบการเชื่อมต่อหรือ URL', showHelp: true });
+                } finally { setLoading(false); }
             };
 
             const handleSave = async () => {
-                if (!settings.teacher1 && !settings.teacher2 && !settings.topic) {
-                    setMessage({ type: 'error', text: 'กรุณากรอกข้อมูลอย่างน้อย 1 ช่องก่อนบันทึก', showHelp: false });
-                    return;
-                }
-                setSaving(true);
-                setMessage({ type: '', text: '', showHelp: false });
+                setSaving(true); setMessage({ type: '', text: '', showHelp: false });
                 try {
                     const response = await fetch(GAS_URL, {
                         method: 'POST',
-                        body: JSON.stringify({ 
-                            action: 'saveSettings', date: selectedDate,
-                            teacher1: settings.teacher1, teacher2: settings.teacher2, topic: settings.topic
-                        })
+                        body: JSON.stringify({ action: 'saveSettings', date: selectedDate, teacher1: settings.teacher1, teacher2: settings.teacher2, topic: settings.topic })
                     });
                     const result = await response.json();
                     if (result.success) {
                         setMessage({ type: 'success', text: 'บันทึกข้อมูลสำเร็จ', showHelp: false });
                         setTimeout(() => setMessage({ type: '', text: '', showHelp: false }), 3000);
-                    } else { throw new Error(result.error || 'เกิดข้อผิดพลาด'); }
+                    } else { throw new Error(result.error); }
                 } catch (error) {
-                    setMessage({ type: 'error', text: 'ไม่สามารถบันทึกได้ กรุณาตรวจสอบการเชื่อมต่อ', showHelp: false });
-                } finally {
-                    setSaving(false);
-                }
+                    setMessage({ type: 'error', text: 'บันทึกไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ', showHelp: false });
+                } finally { setSaving(false); }
             };
 
             const fetchAnalytics = async () => {
-                setAnalyticsLoading(true);
-                setMessage({ type: '', text: '', showHelp: false });
+                setAnalyticsLoading(true); setMessage({ type: '', text: '', showHelp: false });
                 try {
                     const response = await fetch(GAS_URL, {
                         method: 'POST',
-                        body: JSON.stringify({ 
-                            action: 'getArrivalStats', 
-                            startDate: analyticsStartDate,
-                            endDate: analyticsEndDate,
-                            targetClass: analyticsClass
-                        })
+                        body: JSON.stringify({ action: 'getArrivalStats', startDate: analyticsStartDate, endDate: analyticsEndDate, targetClass: analyticsClass })
                     });
-                    
                     const result = await response.json();
-                    if (result.success) {
-                        setAnalyticsData(result);
-                    } else {
-                        throw new Error(result.error || 'เกิดข้อผิดพลาดในการดึงข้อมูลสถิติ');
-                    }
+                    if (result.success) setAnalyticsData(result);
+                    else throw new Error(result.error);
                 } catch (error) {
-                    setMessage({ type: 'error', text: 'ไม่สามารถโหลดสถิติได้ โปรดตรวจสอบการเชื่อมต่อ', showHelp: false });
-                } finally {
-                    setAnalyticsLoading(false);
-                }
+                    setMessage({ type: 'error', text: 'ไม่สามารถโหลดสถิติได้', showHelp: false });
+                } finally { setAnalyticsLoading(false); }
             };
 
-            const handlePrint = () => { window.print(); };
+            const handlePrint = () => window.print();
 
             const formatDateThai = (dateString) => {
                 if (!dateString) return '';
@@ -218,7 +171,6 @@
                 return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
             };
 
-            // กรองข้อมูลนักเรียน 100%
             const filteredAnalyticsData = analyticsData && analyticsData.data ? 
                 (perfectOnly ? analyticsData.data.filter(s => s.perfectAttendance) : analyticsData.data) : [];
 
@@ -237,71 +189,69 @@
                                 </div>
                             </div>
                             
-                            {/* เมนูนำทาง 2 แท็บ */}
-                            <div className="flex space-x-2 bg-white/20 p-1 rounded-lg backdrop-blur-sm">
+                            {/* เมนูแท็บ 3 แท็บ */}
+                            <div className="flex space-x-2 bg-white/20 p-1 rounded-lg backdrop-blur-sm overflow-x-auto">
                                 <button 
                                     onClick={() => setActiveTab('daily')}
-                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'daily' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                    className={`whitespace-nowrap px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'daily' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                                     รายงานประจำวัน
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('analytics')}
-                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                    className={`whitespace-nowrap px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                                     วิเคราะห์รายห้อง
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('dashboard')}
+                                    className={`whitespace-nowrap px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                    สารสนเทศ (กราฟ)
                                 </button>
                             </div>
                         </div>
                     </div>
 
                     <div className="max-w-6xl mx-auto mt-6 px-4">
-                        
                         {message.text && message.type === 'error' && (
                             <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-sm no-print text-sm font-medium text-red-800">
                                 {message.text}
                             </div>
                         )}
 
-                        {}
                         {/* ================= แท็บ 1: รายงานประจำวัน ================= */}
                         {activeTab === 'daily' && (
                             <div>
                                 <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-wrap items-center justify-between no-print border border-gray-100">
                                     <div className="flex items-center space-x-3">
                                         <label className="text-gray-700 font-medium">เลือกวันที่พิมพ์รายงาน:</label>
-                                        <input 
-                                            type="date" 
-                                            value={selectedDate} 
-                                            onChange={(e) => setSelectedDate(e.target.value)}
-                                            className="px-3 py-2 rounded border border-gray-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-schoolRed"
-                                        />
+                                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-3 py-2 rounded border border-gray-300 bg-white" />
                                     </div>
                                     <button onClick={handlePrint} className="flex items-center space-x-1 bg-schoolRed text-white hover:bg-red-700 px-6 py-2 rounded font-semibold transition-colors shadow-sm">
                                         <span>พิมพ์รายงานนี้</span>
                                     </button>
                                 </div>
 
-                                {/* ส่วนแสดงผลเพื่อการพิมพ์ */}
                                 <div className="hidden print-only text-center mb-6">
                                     <h2 className="text-2xl font-bold text-black mb-2">สถิติการมาเรียนของนักเรียน โรงเรียนวัดแม่กะ</h2>
                                     <p className="text-lg text-black">ประจำวัน{formatDateThai(selectedDate)}</p>
                                 </div>
 
                                 {loading ? (
-                                    <div className="flex flex-col items-center justify-center py-20 no-print">
+                                    <div className="flex justify-center py-20 no-print">
                                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-schoolRed"></div>
                                     </div>
                                 ) : (
                                     <div className="bg-white rounded-xl shadow-lg p-6 print-border">
                                         <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-schoolRed pl-3 no-print">ข้อมูลประจำวัน{formatDateThai(selectedDate)}</h2>
-                                        
                                         <div className="overflow-x-auto table-container">
                                             <table className="w-full text-left border-collapse print-border">
                                                 <thead>
-                                                    <tr className="bg-yellow-50 text-gray-700 print:bg-gray-100">
+                                                    <tr className="bg-yellow-50 text-gray-700">
                                                         <th className="border p-2 text-center w-16">ชั้น</th>
                                                         <th className="border p-2 text-center">ช</th>
                                                         <th className="border p-2 text-center">ญ</th>
@@ -331,7 +281,7 @@
                                                     ))}
                                                 </tbody>
                                                 <tfoot>
-                                                    <tr className="bg-red-50 font-bold print:bg-gray-200">
+                                                    <tr className="bg-red-50 font-bold">
                                                         <td className="border p-2 text-center">รวม</td>
                                                         <td className="border p-2 text-center">{summaryData.boys}</td>
                                                         <td className="border p-2 text-center">{summaryData.girls}</td>
@@ -345,37 +295,19 @@
                                         </div>
 
                                         <div className="mt-8 pt-6 border-t border-gray-200">
-                                            {/* โซนพิมพ์ลายเซ็น */}
                                             <div className="hidden print-only mt-10">
                                                 <div className="mb-6 border p-4">
                                                     <p className="font-bold">หัวข้อการอบรมนักเรียนประจำวัน:</p>
                                                     <p className="mt-2 min-h-[60px] whitespace-pre-wrap">{settings.topic || '-'}</p>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-y-16 mt-12">
-                                                    <div className="text-center">
-                                                        <p className="mb-8">ลงชื่อ..............................................................</p>
-                                                        <p>({settings.teacher1 || '................................................'})</p>
-                                                        <p>ครูเวรประจำวัน</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="mb-8">ลงชื่อ..............................................................</p>
-                                                        <p>({settings.teacher2 || '................................................'})</p>
-                                                        <p>ครูเวรประจำวัน</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="mb-8">ลงชื่อ..............................................................</p>
-                                                        <p>(นายจักรพงศ์ จันทวงศ์)</p>
-                                                        <p>รองผู้อำนวยการโรงเรียนวัดแม่กะ</p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="mb-8">ลงชื่อ..............................................................</p>
-                                                        <p>(นางสาวศิริยา อินทกาโมทย์)</p>
-                                                        <p>ผู้อำนวยการโรงเรียนวัดแม่กะ</p>
-                                                    </div>
+                                                    <div className="text-center"><p className="mb-8">ลงชื่อ..............................................................</p><p>({settings.teacher1 || '................................................'})</p><p>ครูเวรประจำวัน</p></div>
+                                                    <div className="text-center"><p className="mb-8">ลงชื่อ..............................................................</p><p>({settings.teacher2 || '................................................'})</p><p>ครูเวรประจำวัน</p></div>
+                                                    <div className="text-center"><p className="mb-8">ลงชื่อ..............................................................</p><p>(นายจักรพงศ์ จันทวงศ์)</p><p>รองผู้อำนวยการโรงเรียนวัดแม่กะ</p></div>
+                                                    <div className="text-center"><p className="mb-8">ลงชื่อ..............................................................</p><p>(นางสาวศิริยา อินทกาโมทย์)</p><p>ผู้อำนวยการโรงเรียนวัดแม่กะ</p></div>
                                                 </div>
                                             </div>
 
-                                            {/* ฟอร์มกรอกข้อมูลครูเวรสำหรับหน้าเว็บ */}
                                             <div className="no-print">
                                                 <h3 className="text-lg font-bold text-gray-800 mb-4">บันทึกข้อมูลครูเวรและการอบรม</h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -411,7 +343,6 @@
                             </div>
                         )}
 
-                        {}
                         {/* ================= แท็บ 2: วิเคราะห์รายห้อง ================= */}
                         {activeTab === 'analytics' && (
                             <div>
@@ -454,7 +385,7 @@
                                 {analyticsData && !analyticsLoading && (
                                     <div className="bg-white rounded-xl shadow-lg p-6 print-border">
                                         <div className="text-center mb-6">
-                                            <h2 className="text-2xl font-bold text-black mb-2">รายงานเวลามาเรียนเฉลี่ยของนักเรียน ชั้น {analyticsClass}</h2>
+                                            <h2 className="text-2xl font-bold text-black mb-2">รายงานเวลามาเรียนเฉลี่ยของนักเรียน {analyticsClass === 'ทุกชั้นเรียน' ? 'ทุกชั้นเรียน' : `ชั้น ${analyticsClass}`}</h2>
                                             <p className="text-gray-700 print:text-black">
                                                 ช่วงเวลา: {formatShortDateThai(analyticsStartDate)} - {formatShortDateThai(analyticsEndDate)} 
                                                 (รวมจำนวนวันที่เช็คชื่อ: {analyticsData.targetDays} วัน 
@@ -464,7 +395,6 @@
                                             </p>
                                         </div>
 
-                                        {/* นำ no-print ออกเพื่อให้แสดงกล่องสรุปตอนพิมพ์ และปรับสไตล์ให้ปริ้นออก */}
                                         <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-8">
                                             {[
                                                 { label: 'ก่อน 7.00 น.', count: analyticsData.summary['ก่อน 7.00 น.'], color: 'bg-green-100 text-green-800 border-green-200' },
@@ -500,8 +430,6 @@
                                                     {filteredAnalyticsData.length > 0 ? (
                                                         filteredAnalyticsData.map((row, index) => {
                                                             let badgeColor = "bg-gray-100 text-gray-800 border-gray-200";
-                                                            let timeColor = "text-blue-700";
-
                                                             if(row.bucket === 'ก่อน 7.00 น.') badgeColor = "bg-green-100 text-green-800 font-bold border-green-300";
                                                             else if(row.bucket === '7.00 - 7.15 น.') badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200";
                                                             else if(row.bucket === '7.15 - 7.30 น.') badgeColor = "bg-yellow-100 text-yellow-800 border-yellow-200";
@@ -521,17 +449,15 @@
                                                                     </td>
                                                                     <td className="border-x border-gray-200 p-2 text-center text-green-600 font-medium">{row.present}</td>
                                                                     <td className="border-x border-gray-200 p-2 text-center text-red-500 font-medium">{row.absent}</td>
-                                                                    <td className={`border-x border-gray-200 p-2 text-center font-bold tracking-wider ${timeColor}`}>{row.avgTimeStr}</td>
+                                                                    <td className="border-x border-gray-200 p-2 text-center font-bold tracking-wider text-blue-700">{row.avgTimeStr}</td>
                                                                     <td className="border-x border-gray-200 p-2 text-center">
-                                                                        <span className={`inline-block px-2 py-1 rounded-full text-xs border ${badgeColor}`}>
-                                                                            {row.bucket}
-                                                                        </span>
+                                                                        <span className={`inline-block px-2 py-1 rounded-full text-xs border ${badgeColor}`}>{row.bucket}</span>
                                                                     </td>
                                                                 </tr>
                                                             )
                                                         })
                                                     ) : (
-                                                        <tr><td colSpan="6" className="border p-8 text-center text-gray-500">ไม่มีข้อมูลนักเรียนที่ตรงกับเงื่อนไข</td></tr>
+                                                        <tr><td colSpan={analyticsClass === 'ทุกชั้นเรียน' ? "7" : "6"} className="border p-8 text-center text-gray-500">ไม่มีข้อมูลนักเรียนที่ตรงกับเงื่อนไข</td></tr>
                                                     )}
                                                 </tbody>
                                             </table>
@@ -540,7 +466,179 @@
                                 )}
                             </div>
                         )}
+
+                        {/* ================= แท็บ 3: สารสนเทศและกราฟ (Dashboard) ================= */}
+                        {activeTab === 'dashboard' && (
+                            <div>
+                                <div className="bg-white rounded-xl shadow p-5 mb-6 no-print border-t-4 border-blue-500">
+                                    <h3 className="font-bold text-gray-800 mb-4">ตัวกรองข้อมูลสารสนเทศ</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                        <div>
+                                            <label className="block text-sm mb-1">ชั้นเรียน</label>
+                                            <select value={analyticsClass} onChange={(e) => setAnalyticsClass(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white">
+                                                <option value="ทุกชั้นเรียน">ทุกชั้นเรียน</option>
+                                                {['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'].map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">ตั้งแต่วันที่</label>
+                                            <input type="date" value={analyticsStartDate} onChange={(e) => setAnalyticsStartDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">ถึงวันที่</label>
+                                            <input type="date" value={analyticsEndDate} onChange={(e) => setAnalyticsEndDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded bg-white"/>
+                                        </div>
+                                        <button onClick={fetchAnalytics} disabled={analyticsLoading} className={`w-full font-bold py-2 px-4 rounded shadow transition-colors text-white ${analyticsLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                            {analyticsLoading ? 'กำลังประมวลผล...' : 'สร้างกราฟ'}
+                                        </button>
+                                    </div>
+                                    
+                                    {analyticsData && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                                            <button onClick={() => {
+                                                const btn = document.getElementById('dl-btn');
+                                                const originalText = btn.innerHTML;
+                                                btn.innerHTML = '⏳ กำลังสร้างรูปภาพ...';
+                                                window.html2canvas(document.getElementById('dashboard-export-area'), { scale: 2, backgroundColor: '#ffffff' }).then(canvas => {
+                                                    const link = document.createElement('a');
+                                                    link.download = `สารสนเทศการมาเรียน_${analyticsClass}.png`;
+                                                    link.href = canvas.toDataURL('image/png');
+                                                    link.click();
+                                                    btn.innerHTML = originalText;
+                                                });
+                                            }} id="dl-btn" className="flex items-center space-x-1 text-blue-700 hover:bg-blue-50 px-4 py-2 rounded font-semibold border border-blue-500 transition-colors">
+                                                <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                <span>ดาวน์โหลดเป็นรูปภาพ (PNG)</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {analyticsData && !analyticsLoading && (
+                                    <div id="dashboard-export-area" className="bg-white rounded-xl shadow-lg p-8 print-border">
+                                        <div className="text-center mb-8">
+                                            <h2 className="text-2xl font-bold text-black mb-2">แดชบอร์ดสารสนเทศการมาเรียน {analyticsClass === 'ทุกชั้นเรียน' ? 'ระดับโรงเรียน' : `ชั้น ${analyticsClass}`}</h2>
+                                            <p className="text-gray-700">
+                                                ช่วงเวลา: {formatShortDateThai(analyticsStartDate)} - {formatShortDateThai(analyticsEndDate)} 
+                                                (เฉลี่ยมาเรียนเวลา {analyticsData.overallAvgTimeStr} น.)
+                                            </p>
+                                        </div>
+                                        <DashboardCharts data={analyticsData} targetClass={analyticsClass} />
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
+                </div>
+            );
+        }
+
+        // Component ย่อยสำหรับวาดกราฟ
+        function DashboardCharts({ data, targetClass }) {
+            const COLORS = {
+                'ก่อน 7.00 น.': '#22c55e', '7.00 - 7.15 น.': '#10b981', '7.15 - 7.30 น.': '#eab308', 
+                '7.30 - 7.45 น.': '#f97316', '7.45 - 8.00 น.': '#ef4444', 'หลัง 8.00 น.': '#6b7280', 
+            };
+
+            const pieData = Object.keys(data.summary)
+                .filter(key => key !== 'ไม่มีข้อมูล' && data.summary[key] > 0)
+                .map(key => ({ name: key, value: data.summary[key] }));
+                
+            const lineData = data.dailyTrend || [];
+            
+            const formatTimeAxis = (decimal) => {
+                const h = Math.floor(decimal);
+                const m = Math.floor((decimal - h) * 60);
+                return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+            };
+            
+            const CustomLineTooltip = ({ active, payload, label }) => {
+                if (active && payload && payload.length) {
+                    return (
+                        <div className="bg-white p-3 border border-gray-200 shadow-lg rounded-lg">
+                            <p className="font-bold text-gray-700 mb-1">วันที่ {label}</p>
+                            <p className="text-blue-600 font-semibold">เฉลี่ย: {payload[0].payload.timeStr} น.</p>
+                            <p className="text-gray-500 text-sm">จำนวนนักเรียน: {payload[0].payload.count} คน</p>
+                        </div>
+                    );
+                }
+                return null;
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="border border-gray-100 rounded-xl p-4 shadow-sm bg-gray-50/50">
+                        <h4 className="text-center font-bold text-gray-700 mb-2">สัดส่วนนักเรียนตามกลุ่มเวลา</h4>
+                        <div className="h-72">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={pieData} cx="50%" cy="50%" labelLine={true} 
+                                        label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                                        outerRadius={80} fill="#8884d8" dataKey="value"
+                                    >
+                                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[entry.name]} />)}
+                                    </Pie>
+                                    <Tooltip formatter={(value) => [`${value} คน`, 'จำนวนนักเรียน']} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="border border-gray-100 rounded-xl p-4 shadow-sm bg-gray-50/50">
+                        <h4 className="text-center font-bold text-gray-700 mb-2">จำนวนนักเรียนตามกลุ่มเวลา</h4>
+                        <div className="h-72">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={pieData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="name" tick={{fontSize: 11}} interval={0} angle={-15} textAnchor="end" height={60} />
+                                    <YAxis allowDecimals={false} />
+                                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px'}} formatter={(value) => [`${value} คน`, 'จำนวน']} />
+                                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[entry.name]} />)}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className={`border border-gray-100 rounded-xl p-4 shadow-sm bg-gray-50/50 ${targetClass === 'ทุกชั้นเรียน' ? '' : 'lg:col-span-2'}`}>
+                        <h4 className="text-center font-bold text-gray-700 mb-2">แนวโน้มเวลามาเรียนเฉลี่ย (รายวัน)</h4>
+                        <div className="h-72">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={lineData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                                    <XAxis dataKey="dateStr" />
+                                    <YAxis domain={['auto', 'auto']} tickFormatter={formatTimeAxis} reversed={true} />
+                                    <Tooltip content={<CustomLineTooltip />} />
+                                    <Line type="monotone" dataKey="avgTimeDecimal" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} activeDot={{ r: 8 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                            <p className="text-center text-xs text-gray-500 mt-2">* จุดที่อยู่สูงขึ้น หมายถึงนักเรียนมาโรงเรียนเช้าขึ้น</p>
+                        </div>
+                    </div>
+
+                    {targetClass === 'ทุกชั้นเรียน' && (
+                        <div className="border border-gray-100 rounded-xl p-4 shadow-sm bg-gray-50/50 lg:col-span-2">
+                            <h4 className="text-center font-bold text-gray-700 mb-2">เปรียบเทียบสถิติการมาเรียน จำแนกตามระดับชั้น</h4>
+                            <div className="h-80">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={data.classStats} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                                        <XAxis dataKey="name" />
+                                        <YAxis allowDecimals={false} />
+                                        <Tooltip contentStyle={{borderRadius: '8px'}} />
+                                        <Legend />
+                                        <Bar dataKey="ก่อน 7.00 น." stackId="a" fill={COLORS['ก่อน 7.00 น.']} />
+                                        <Bar dataKey="7.00 - 7.15 น." stackId="a" fill={COLORS['7.00 - 7.15 น.']} />
+                                        <Bar dataKey="7.15 - 7.30 น." stackId="a" fill={COLORS['7.15 - 7.30 น.']} />
+                                        <Bar dataKey="7.30 - 7.45 น." stackId="a" fill={COLORS['7.30 - 7.45 น.']} />
+                                        <Bar dataKey="7.45 - 8.00 น." stackId="a" fill={COLORS['7.45 - 8.00 น.']} />
+                                        <Bar dataKey="หลัง 8.00 น." stackId="a" fill={COLORS['หลัง 8.00 น.']} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
