@@ -518,6 +518,22 @@
             const [dashboardLoading, setDashboardLoading] = React.useState(false);
             const [dashboardData, setDashboardData] = React.useState(null);
 
+            // State: แท็บสรุปการขาดเรียน
+            const [allStudentsList, setAllStudentsList] = React.useState([]);
+            const [absenceStartDate, setAbsenceStartDate] = React.useState(() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 30); // Default 30 วันย้อนหลัง
+                return d.toISOString().split('T')[0];
+            });
+            const [absenceEndDate, setAbsenceEndDate] = React.useState(new Date().toISOString().split('T')[0]);
+            const [absenceClass, setAbsenceClass] = React.useState('ทุกชั้นเรียน');
+            const [absenceStudentId, setAbsenceStudentId] = React.useState('all');
+            const [absenceViewMode, setAbsenceViewMode] = React.useState('daily'); // 'daily' หรือ 'student'
+            const [hideZeroDaily, setHideZeroDaily] = React.useState(false); // กรองเฉพาะวันที่มีคนขาด
+            const [showAllStudents, setShowAllStudents] = React.useState(false); // แสดงนักเรียนทุกคนรวมขาด 0 วัน
+            const [absenceLoading, setAbsenceLoading] = React.useState(false);
+            const [absenceData, setAbsenceData] = React.useState(null);
+
             const [message, setMessage] = React.useState({ type: '', text: '', showHelp: false });
 
             // รายชื่อครูเวร
@@ -529,6 +545,9 @@
 
             React.useEffect(() => {
                 if(activeTab === 'daily') fetchData(selectedDate);
+                if(activeTab === 'absence' && allStudentsList.length === 0) {
+                    fetchAllStudents();
+                }
             }, [selectedDate, activeTab]);
 
             const fetchData = async (date) => {
@@ -650,6 +669,59 @@
                 }
             };
 
+            const fetchAllStudents = async () => {
+                try {
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'getStudents' })
+                    });
+                    const result = await response.json();
+                    if (result.success && result.students) {
+                        setAllStudentsList(result.students);
+                    }
+                } catch (e) {
+                    console.error("Could not load students list:", e);
+                }
+            };
+
+            const handleAbsenceClassChange = (newClass) => {
+                setAbsenceClass(newClass);
+                if (absenceStudentId !== 'all') {
+                    const student = allStudentsList.find(s => s.id === absenceStudentId);
+                    if (student && newClass !== 'ทุกชั้นเรียน' && student.className !== newClass) {
+                        setAbsenceStudentId('all');
+                    }
+                }
+            };
+
+            const fetchAbsenceReport = async () => {
+                setAbsenceLoading(true);
+                setMessage({ type: '', text: '', showHelp: false });
+                try {
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ 
+                            action: 'getAbsenceReport', 
+                            startDate: absenceStartDate,
+                            endDate: absenceEndDate,
+                            targetClass: absenceClass,
+                            studentId: absenceStudentId
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        setAbsenceData(result);
+                    } else {
+                        throw new Error(result.error || 'เกิดข้อผิดพลาดในการดึงข้อมูลสถิติการขาดเรียน');
+                    }
+                } catch (error) {
+                    setMessage({ type: 'error', text: 'ไม่สามารถโหลดข้อมูลสถิติการขาดเรียนได้ โปรดตรวจสอบการเชื่อมต่อ', showHelp: false });
+                } finally {
+                    setAbsenceLoading(false);
+                }
+            };
+
             const handlePrint = () => { window.print(); };
 
             const formatDateThai = (dateString) => {
@@ -671,6 +743,11 @@
             const filteredAnalyticsData = analyticsData && analyticsData.data ? 
                 (perfectOnly ? analyticsData.data.filter(s => s.perfectAttendance) : analyticsData.data) : [];
 
+            // รายชื่อนักเรียนที่คัดกรองตามชั้นเรียนสำหรับ Dropdown สรุปการขาดเรียน
+            const availableStudentsForClass = absenceClass === 'ทุกชั้นเรียน' 
+                ? allStudentsList 
+                : allStudentsList.filter(s => s.className === absenceClass);
+
             return (
                 <div className="min-h-screen pb-12">
                     {/* Header */}
@@ -686,28 +763,35 @@
                                 </div>
                             </div>
                             
-                            {/* เมนูนำทาง 3 แท็บ */}
-                            <div className="flex space-x-2 bg-white/20 p-1 rounded-lg backdrop-blur-sm">
+                            {/* เมนูนำทาง 4 แท็บ */}
+                            <div className="flex flex-wrap gap-1.5 bg-white/20 p-1 rounded-lg backdrop-blur-sm">
                                 <button 
                                     onClick={() => setActiveTab('daily')}
-                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'daily' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                    className={`px-3 py-2 rounded font-semibold transition-colors flex items-center gap-1.5 text-sm ${activeTab === 'daily' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                                     รายงานประจำวัน
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('analytics')}
-                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                    className={`px-3 py-2 rounded font-semibold transition-colors flex items-center gap-1.5 text-sm ${activeTab === 'analytics' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                                     วิเคราะห์รายห้อง
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('dashboard')}
-                                    className={`px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                    className={`px-3 py-2 rounded font-semibold transition-colors flex items-center gap-1.5 text-sm ${activeTab === 'dashboard' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2" /></svg>
                                     สารสนเทศและกราฟ
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('absence')}
+                                    className={`px-3 py-2 rounded font-semibold transition-colors flex items-center gap-1.5 text-sm ${activeTab === 'absence' ? 'bg-white text-schoolRed shadow' : 'text-white hover:bg-white/20'}`}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    สรุปการขาดเรียน
                                 </button>
                             </div>
                         </div>
@@ -1087,6 +1171,384 @@
                                     <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
                                         <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                         <p className="text-gray-500 font-medium">กรุณาเลือกเงื่อนไขการกรองข้อมูลแล้วกดปุ่ม "ดึงข้อมูลสารสนเทศและกราฟ"</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ================= แท็บ 4: สรุปการขาดเรียน ================= */}
+                        {activeTab === 'absence' && (
+                            <div>
+                                <div className="bg-white rounded-xl shadow p-5 mb-6 no-print border-t-4 border-schoolRed">
+                                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                        <span>📋</span> ตัวกรองสรุปสถิติการขาดเรียน
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">ชั้นเรียน</label>
+                                            <select 
+                                                value={absenceClass} 
+                                                onChange={(e) => handleAbsenceClassChange(e.target.value)} 
+                                                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-schoolRed"
+                                            >
+                                                <option value="ทุกชั้นเรียน">ทุกชั้นเรียน</option>
+                                                {['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'].map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">นักเรียน</label>
+                                            <select 
+                                                value={absenceStudentId} 
+                                                onChange={(e) => setAbsenceStudentId(e.target.value)} 
+                                                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-schoolRed"
+                                            >
+                                                <option value="all">นักเรียนทุกคน{absenceClass !== 'ทุกชั้นเรียน' ? `ในชั้น ${absenceClass}` : ' (ทั้งโรงเรียน)'}</option>
+                                                {availableStudentsForClass.map(s => (
+                                                    <option key={s.id} value={s.id}>
+                                                        {absenceClass === 'ทุกชั้นเรียน' ? `[${s.className}] ` : ''}{s.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">ตั้งแต่วันที่</label>
+                                            <input 
+                                                type="date" 
+                                                value={absenceStartDate} 
+                                                onChange={(e) => setAbsenceStartDate(e.target.value)} 
+                                                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-schoolRed"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">ถึงวันที่</label>
+                                            <input 
+                                                type="date" 
+                                                value={absenceEndDate} 
+                                                onChange={(e) => setAbsenceEndDate(e.target.value)} 
+                                                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-schoolRed"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* แถบเลือกรูปแบบสรุปสถิติ 2 รูปแบบ และตัวเลือกเสริม */}
+                                    <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-sm font-bold text-gray-700 mr-1">รูปแบบสรุปสถิติ:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAbsenceViewMode('daily')}
+                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${absenceViewMode === 'daily' ? 'bg-schoolRed text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                            >
+                                                <span>📅 1. ตารางรายวัน (วันไหนขาดใครบ้าง)</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAbsenceViewMode('student')}
+                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${absenceViewMode === 'student' ? 'bg-schoolRed text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                            >
+                                                <span>👤 2. ตารางรายชื่อ (ขาดวันไหนบ้าง)</span>
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-3">
+                                            {absenceViewMode === 'daily' ? (
+                                                <label className="flex items-center cursor-pointer select-none text-sm text-gray-700 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-100">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={hideZeroDaily} 
+                                                        onChange={(e) => setHideZeroDaily(e.target.checked)} 
+                                                        className="w-4 h-4 text-schoolRed rounded mr-2"
+                                                    />
+                                                    <span>แสดงเฉพาะวันที่มีคนขาดเรียน (ซ่อนวันที่มาครบ 100%)</span>
+                                                </label>
+                                            ) : (
+                                                <label className="flex items-center cursor-pointer select-none text-sm text-gray-700 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-100">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={showAllStudents} 
+                                                        onChange={(e) => setShowAllStudents(e.target.checked)} 
+                                                        className="w-4 h-4 text-schoolRed rounded mr-2"
+                                                    />
+                                                    <span>แสดงนักเรียนทุกคน (รวมคนที่มาครบ 0 วัน)</span>
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* แถวปุ่มดึงข้อมูลและปุ่มพิมพ์ */}
+                                    <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                                        <button 
+                                            onClick={fetchAbsenceReport} 
+                                            disabled={absenceLoading} 
+                                            className="font-bold py-2.5 px-6 rounded shadow transition-colors bg-schoolRed hover:bg-red-700 text-white disabled:bg-gray-300 flex items-center gap-2"
+                                        >
+                                            {absenceLoading ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                                    <span>กำลังประมวลผล...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                                    <span>ดึงข้อมูลสรุปการขาดเรียน</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        
+                                        {absenceData && (
+                                            <button 
+                                                onClick={handlePrint} 
+                                                className="flex items-center space-x-1.5 text-schoolRed hover:bg-red-50 px-5 py-2.5 rounded font-semibold border-2 border-schoolRed shadow-sm"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                                <span>พิมพ์รายงาน / Save PDF</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {absenceLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-20">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-schoolRed"></div>
+                                        <p className="mt-4 text-gray-500 font-medium">กำลังรวบรวมและวิเคราะห์สถิติการขาดเรียน...</p>
+                                    </div>
+                                ) : absenceData ? (
+                                    <div className="print-border">
+                                        {/* ส่วนหัวสำหรับการพิมพ์ */}
+                                        <div className="hidden print-only text-center mb-6">
+                                            <h2 className="text-2xl font-bold text-black mb-1">รายงานสรุปการขาดเรียนของนักเรียน โรงเรียนวัดแม่กะ</h2>
+                                            <p className="text-gray-800 font-medium">
+                                                ชั้น {absenceClass} {absenceStudentId !== 'all' ? `(เฉพาะ: ${allStudentsList.find(s => s.id === absenceStudentId)?.name || absenceStudentId})` : ''} | 
+                                                ช่วงเวลา: {formatShortDateThai(absenceStartDate)} - {formatShortDateThai(absenceEndDate)}
+                                            </p>
+                                            <p className="text-sm text-gray-600 mt-1">
+                                                รูปแบบ: {absenceViewMode === 'daily' ? 'ตารางรายวัน (วันไหนขาดใครบ้าง)' : 'ตารางรายชื่อ (ขาดวันไหนบ้าง)'} 
+                                                (จำนวนวันที่เช็คชื่อ: {absenceData.targetDays} วัน | ขาดเรียนรวม: {absenceData.totalAbsences} ครั้ง)
+                                            </p>
+                                        </div>
+
+                                        {/* การ์ดสรุป KPI ภาพรวมด้านบน */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 no-print">
+                                            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">จำนวนวันที่เช็คชื่อทั้งหมด</div>
+                                                <div className="text-3xl font-black mt-2">{absenceData.targetDays} <span className="text-lg font-normal">วัน</span></div>
+                                                <div className="text-xs opacity-80 mt-1">ในช่วง {formatShortDateThai(absenceStartDate)} - {formatShortDateThai(absenceEndDate)}</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">จำนวนครั้งที่ขาดเรียนรวม</div>
+                                                <div className="text-3xl font-black mt-2">{absenceData.totalAbsences} <span className="text-lg font-normal">ครั้ง</span></div>
+                                                <div className="text-xs opacity-80 mt-1">รวมทุกประเภท (ขาด, ลาป่วย, ลากิจ)</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl p-5 shadow-sm">
+                                                <div className="text-sm font-semibold opacity-90">นักเรียนที่มีประวัติขาดเรียน</div>
+                                                <div className="text-3xl font-black mt-2">{absenceData.absentStudentsCount} <span className="text-lg font-normal">/ {absenceData.totalStudents} คน</span></div>
+                                                <div className="text-xs opacity-80 mt-1">
+                                                    {absenceData.totalStudents > 0 
+                                                        ? `คิดเป็น ${((absenceData.absentStudentsCount / absenceData.totalStudents) * 100).toFixed(1)}% ของนักเรียนกลุ่มเป้าหมาย` 
+                                                        : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* รูปแบบที่ 1: ตารางรายวัน (วันไหนขาดใครบ้าง) */}
+                                        {absenceViewMode === 'daily' && (
+                                            <div className="bg-white rounded-xl shadow p-6 print-border">
+                                                <div className="flex justify-between items-center mb-4 no-print">
+                                                    <h4 className="font-bold text-gray-800 text-lg border-l-4 border-schoolRed pl-2">
+                                                        📅 ตารางสรุปการขาดเรียนรายวัน (วันไหนขาดใครบ้าง)
+                                                    </h4>
+                                                    <span className="text-xs text-gray-500">เรียงตามวันที่จากอดีตไปปัจจุบัน</span>
+                                                </div>
+                                                <div className="overflow-x-auto table-container">
+                                                    <table className="w-full text-left border-collapse print-border">
+                                                        <thead>
+                                                            <tr className="bg-red-50 text-gray-800 print:bg-gray-100">
+                                                                <th className="border p-2.5 text-center w-12">ลำดับ</th>
+                                                                <th className="border p-2.5 text-center min-w-[150px]">วันที่</th>
+                                                                {absenceClass === 'ทุกชั้นเรียน' && (
+                                                                    <th className="border p-2.5 text-center w-20">ชั้น</th>
+                                                                )}
+                                                                <th className="border p-2.5 text-center w-28">จำนวนที่ขาด</th>
+                                                                <th className="border p-2.5 min-w-[300px]">รายชื่อนักเรียนที่ขาดเรียน (สาเหตุ)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {(() => {
+                                                                const displayedDays = hideZeroDaily 
+                                                                    ? absenceData.dailyReport.filter(d => d.totalAbsent > 0)
+                                                                    : absenceData.dailyReport;
+                                                                
+                                                                if (displayedDays.length === 0) {
+                                                                    return (
+                                                                        <tr>
+                                                                            <td colSpan={absenceClass === 'ทุกชั้นเรียน' ? 5 : 4} className="border p-8 text-center text-gray-500 font-medium">
+                                                                                {hideZeroDaily ? "🎉 ไม่มีวันที่มีนักเรียนขาดเรียนเลย (มาเรียนครบทุกวัน)" : "ไม่มีข้อมูลการเช็คชื่อในช่วงเวลาที่เลือก"}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                }
+
+                                                                return displayedDays.map((day, idx) => (
+                                                                    <tr key={day.date} className="hover:bg-gray-50 border-b border-gray-200">
+                                                                        <td className="border p-2.5 text-center text-gray-600 font-medium">{idx + 1}</td>
+                                                                        <td className="border p-2.5 text-center font-medium text-gray-800 whitespace-nowrap">
+                                                                            {formatDateThai(day.date)}
+                                                                        </td>
+                                                                        {absenceClass === 'ทุกชั้นเรียน' && (
+                                                                            <td className="border p-2.5 text-center text-gray-600 font-medium">ทุกชั้น</td>
+                                                                        )}
+                                                                        <td className="border p-2.5 text-center">
+                                                                            {day.totalAbsent === 0 ? (
+                                                                                <span className="font-bold text-green-600">0 คน</span>
+                                                                            ) : (
+                                                                                <span className="font-black text-red-600 text-base">{day.totalAbsent} คน</span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="border p-2.5">
+                                                                            {day.totalAbsent === 0 ? (
+                                                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+                                                                                    ✓ มาครบ 100% (ไม่มีคนขาด)
+                                                                                </span>
+                                                                            ) : (
+                                                                                <div className="flex flex-wrap gap-1.5">
+                                                                                    {day.absentees.map((abs, aIdx) => {
+                                                                                        let bColor = "bg-red-50 text-red-700 border-red-200";
+                                                                                        if (abs.reason.includes('ป่วย')) {
+                                                                                            bColor = "bg-amber-50 text-amber-700 border-amber-200";
+                                                                                        } else if (abs.reason.includes('ลา')) {
+                                                                                            bColor = "bg-blue-50 text-blue-700 border-blue-200";
+                                                                                        }
+                                                                                        return (
+                                                                                            <span key={aIdx} className={`inline-flex items-center px-2.5 py-1 rounded text-xs border ${bColor} font-medium`}>
+                                                                                                <span>{abs.name}</span>
+                                                                                                {absenceClass === 'ทุกชั้นเรียน' && (
+                                                                                                    <span className="ml-1 opacity-75 font-normal">({abs.className})</span>
+                                                                                                )}
+                                                                                                <span className="ml-1.5 font-bold">({abs.reason})</span>
+                                                                                            </span>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ));
+                                                            })()}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* รูปแบบที่ 2: ตารางรายชื่อ (ขาดวันไหนบ้าง) */}
+                                        {absenceViewMode === 'student' && (
+                                            <div className="bg-white rounded-xl shadow p-6 print-border">
+                                                <div className="flex justify-between items-center mb-4 no-print">
+                                                    <h4 className="font-bold text-gray-800 text-lg border-l-4 border-schoolRed pl-2">
+                                                        👤 ตารางสรุปการขาดเรียนรายชื่อ (ขาดวันไหนบ้าง)
+                                                    </h4>
+                                                    <span className="text-xs text-gray-500">เรียงตามระดับชั้นและเลขที่ / รหัสนักเรียน</span>
+                                                </div>
+                                                <div className="overflow-x-auto table-container">
+                                                    <table className="w-full text-left border-collapse print-border">
+                                                        <thead>
+                                                            <tr className="bg-red-50 text-gray-800 print:bg-gray-100">
+                                                                <th className="border p-2.5 text-center w-12">ลำดับ</th>
+                                                                <th className="border p-2.5 text-center w-24">รหัส</th>
+                                                                {absenceClass === 'ทุกชั้นเรียน' && (
+                                                                    <th className="border p-2.5 text-center w-16">ชั้น</th>
+                                                                )}
+                                                                <th className="border p-2.5 min-w-[180px]">ชื่อ - นามสกุล</th>
+                                                                <th className="border p-2.5 text-center w-24">ขาดรวม (วัน)</th>
+                                                                <th className="border p-2.5 min-w-[320px]">วันที่ขาดเรียนและสาเหตุ</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {(() => {
+                                                                const displayedStudents = showAllStudents 
+                                                                    ? absenceData.studentReport 
+                                                                    : absenceData.studentReport.filter(s => s.totalAbsent > 0);
+                                                                
+                                                                if (displayedStudents.length === 0) {
+                                                                    return (
+                                                                        <tr>
+                                                                            <td colSpan={absenceClass === 'ทุกชั้นเรียน' ? 6 : 5} className="border p-8 text-center text-gray-500 font-medium">
+                                                                                {!showAllStudents ? "🎉 ไม่มีนักเรียนคนใดขาดเรียนในช่วงเวลานี้ (ทุกคนมาเรียนครบ)" : "ไม่มีข้อมูลนักเรียนที่ตรงกับเงื่อนไข"}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                }
+
+                                                                return displayedStudents.map((st, idx) => (
+                                                                    <tr key={st.id} className="hover:bg-gray-50 border-b border-gray-200">
+                                                                        <td className="border p-2.5 text-center text-gray-600 font-medium">{idx + 1}</td>
+                                                                        <td className="border p-2.5 text-center text-gray-500 font-mono text-sm">{st.id}</td>
+                                                                        {absenceClass === 'ทุกชั้นเรียน' && (
+                                                                            <td className="border p-2.5 text-center text-gray-700 font-medium">{st.className}</td>
+                                                                        )}
+                                                                        <td className="border p-2.5 font-medium text-gray-900">
+                                                                            {st.name}
+                                                                        </td>
+                                                                        <td className="border p-2.5 text-center">
+                                                                            {st.totalAbsent === 0 ? (
+                                                                                <span className="font-bold text-green-600">0 วัน</span>
+                                                                            ) : (
+                                                                                <span className="font-black text-red-600 text-base">{st.totalAbsent} <span className="text-xs font-normal">วัน</span></span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="border p-2.5">
+                                                                            {st.totalAbsent === 0 ? (
+                                                                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+                                                                                    ✓ มาเรียนครบ (0 วัน)
+                                                                                </span>
+                                                                            ) : (
+                                                                                <div className="flex flex-wrap gap-1.5">
+                                                                                    {st.absences.map((abs, aIdx) => {
+                                                                                        let bColor = "bg-red-50 text-red-700 border-red-200";
+                                                                                        if (abs.reason.includes('ป่วย')) {
+                                                                                            bColor = "bg-amber-50 text-amber-700 border-amber-200";
+                                                                                        } else if (abs.reason.includes('ลา')) {
+                                                                                            bColor = "bg-blue-50 text-blue-700 border-blue-200";
+                                                                                        }
+                                                                                        return (
+                                                                                            <span key={aIdx} className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${bColor}`}>
+                                                                                                <span className="font-medium">{formatShortDateThai(abs.date)}</span>
+                                                                                                <span className="ml-1 font-bold">({abs.reason})</span>
+                                                                                            </span>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ));
+                                                            })()}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ส่วนท้ายสำหรับการพิมพ์ (ช่องลงลายเซ็น) */}
+                                        <div className="hidden print-only mt-12">
+                                            <div className="grid grid-cols-2 gap-y-16">
+                                                <div className="text-center">
+                                                    <p className="mb-10">ลงชื่อ..............................................................</p>
+                                                    <p>(....................................................................)</p>
+                                                    <p className="mt-1">ครูประจำชั้น / ผู้จัดทำรายงาน</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="mb-10">ลงชื่อ..............................................................</p>
+                                                    <p>(นางสาวศิริยา อินทกาโมทย์)</p>
+                                                    <p className="mt-1">ผู้อำนวยการโรงเรียนวัดแม่กะ</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        <p className="text-gray-500 font-medium">กรุณาเลือกเงื่อนไขการกรองข้อมูลแล้วกดปุ่ม "ดึงข้อมูลสรุปการขาดเรียน"</p>
                                     </div>
                                 )}
                             </div>
